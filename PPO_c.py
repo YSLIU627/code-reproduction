@@ -93,6 +93,7 @@ class PPO() :
         
         self.MseLoss = nn.MSELoss()
     def select_action(self, state, memory):
+        # select action according to the old policy
         state = torch.FloatTensor(state.reshape(1, -1)).to(device)
         return self.policy_old.act(state, memory).cpu().data.numpy().flatten()
     
@@ -107,10 +108,10 @@ class PPO() :
             # newest in the first
             rewards.insert(0,disc_reward)       
 
-        # Normalizing the rewards:
+        # Normalizing the rewards:here rewards mean return in MC
         rewards = torch.tensor(rewards).to(device).float()
         rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-5)
-        # convert list to tensor
+        # convert list to tensor, old ones need not to be in the grad graph
         old_states = torch.squeeze(torch.stack(memory.states).to(device), 1).detach()
         old_actions = torch.squeeze(torch.stack(memory.actions).to(device), 1).detach()
         old_logprobs = torch.squeeze(torch.stack(memory.logprobs), 1).to(device).detach()
@@ -123,6 +124,7 @@ class PPO() :
             ratios = torch.exp(logprobs - old_logprobs.detach()).float()
 
         # find the surrogate loss
+        
         advantages = rewards- state_values.detach()
         L_CPI = ratios* advantages
         L_CLIP = torch.min(L_CPI,torch.clamp(ratios,1-self.eps_clip,1+self.eps_clip)*advantages)
@@ -195,12 +197,6 @@ def main():
                 break
         
         avg_length += t
-        
-        # stop training if avg_reward > solved_reward
-        if running_reward > (log_interval*solved_reward):
-            print("########## Solved! ##########")
-            torch.save(ppo.policy.state_dict(), './PPO_continuous_solved_{}.pth'.format(env_name))
-            break
         
         # save every 500 episodes
         if i_episode % 500 == 0:
