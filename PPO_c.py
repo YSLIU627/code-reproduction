@@ -6,6 +6,25 @@ import numpy as np
 torch.set_default_tensor_type(torch.FloatTensor)
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
+############## Hyperparameters ##############
+    env_name = "BipedalWalker-v3"
+    render = False
+    solved_reward = 300         # stop training if avg_reward > solved_reward
+    log_interval = 20           # print avg reward in the interval
+    max_episodes = 10000        # max training episodes
+    max_timesteps = 1500        # max timesteps in one episode
+    
+    update_timestep = 4000      # update policy every n timesteps
+    action_std = 0.5            # constant std for action distribution (Multivariate Normal)
+    K_epochs = 80               # update policy for K epochs
+    eps_clip = 0.2              # clip parameter for PPO
+    gamma = 0.99                # discount factor
+    
+    lr = 0.0003                 # parameters for Adam optimizer
+    betas = (0.9, 0.999)
+    
+    random_seed = None
+
 class ActorCritic(nn.Module):
     def __init__(self, state_dim, action_dim, action_std):
         super(ActorCritic,self).__init__()
@@ -47,6 +66,7 @@ class ActorCritic(nn.Module):
         return action.detach() 
 
     def evaluate(self, state, action):
+        # used in the update
         action_mean = self.actor(state)
         
         action_var= self.action_var.expand_as(action_mean)
@@ -129,24 +149,7 @@ class Memory:
         del self.rewards[:]
         del self.is_terminals[:]
 def main():
-    ############## Hyperparameters ##############
-    env_name = "BipedalWalker-v3"
-    render = False
-    solved_reward = 300         # stop training if avg_reward > solved_reward
-    log_interval = 20           # print avg reward in the interval
-    max_episodes = 10000        # max training episodes
-    max_timesteps = 1500        # max timesteps in one episode
     
-    update_timestep = 4000      # update policy every n timesteps
-    action_std = 0.5            # constant std for action distribution (Multivariate Normal)
-    K_epochs = 80               # update policy for K epochs
-    eps_clip = 0.2              # clip parameter for PPO
-    gamma = 0.99                # discount factor
-    
-    lr = 0.0003                 # parameters for Adam optimizer
-    betas = (0.9, 0.999)
-    
-    random_seed = None
     # creating environment
     env = gym.make(env_name)
     state_dim = env.observation_space.shape[0]
