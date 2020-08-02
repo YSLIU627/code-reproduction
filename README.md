@@ -1,1 +1,2 @@
-#### Here I reproduce PPO code
+Here I reproduce PPO codes and run them on certian Atari games with continuous action space.
+
