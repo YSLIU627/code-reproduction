@@ -7,23 +7,23 @@ torch.set_default_tensor_type(torch.FloatTensor)
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 ############## Hyperparameters ##############
-    env_name = "BipedalWalker-v3"
-    render = False
-    solved_reward = 300         # stop training if avg_reward > solved_reward
-    log_interval = 20           # print avg reward in the interval
-    max_episodes = 10000        # max training episodes
-    max_timesteps = 1500        # max timesteps in one episode
+env_name = "BipedalWalker-v3"
+render = False
+solved_reward = 300         # stop training if average_reward > solved_reward
+log_interval = 20           # print average reward in the interval
+max_episodes = 10000        # max training episodes
+max_timesteps = 1500        # max timesteps in one episode
     
-    update_timestep = 4000      # update policy every n timesteps
-    action_std = 0.5            # constant std for action distribution (Multivariate Normal)
-    K_epochs = 80               # update policy for K epochs
-    eps_clip = 0.2              # clip parameter for PPO
-    gamma = 0.99                # discount factor
+update_timestep = 4000      # update policy every n timesteps
+action_std = 0.5            # constant std for action distribution (Multivariate Normal)
+K_epochs = 80               # update policy for K epochs
+eps_clip = 0.2              # clip parameter for PPO
+gamma = 0.99                # discount factor
     
-    lr = 0.0003                 # parameters for Adam optimizer
-    betas = (0.9, 0.999)
+lr = 0.0003                 # parameters for Adam optimizer
+betas = (0.9, 0.999)
     
-    random_seed = None
+random_seed = None
 
 class ActorCritic(nn.Module):
     def __init__(self, state_dim, action_dim, action_std):
@@ -68,9 +68,11 @@ class ActorCritic(nn.Module):
     def evaluate(self, state, action):
         # used in the update
         action_mean = self.actor(state)
-        
         action_var= self.action_var.expand_as(action_mean)
-        distribution = MultivariateNormal(action_mean, action_var)
+        cov_mat = torch.diag_embed(action_var).to(device)
+
+        distribution = MultivariateNormal(action_mean, cov_mat)
+        cov_mat = torch.diag_embed(action_var).to(device)
         action_logprob = distribution.log_prob(action)
         dist_entropy = distribution.entropy()
         state_value = self.critic(state)
@@ -92,25 +94,25 @@ class PPO() :
         self.policy_old.load_state_dict(self.policy.state_dict())
         
         self.MseLoss = nn.MSELoss()
-    def select_action(self, state, memory):
+    def action_selection(self, state, memory):
         # select action according to the old policy
         state = torch.FloatTensor(state.reshape(1, -1)).to(device)
         return self.policy_old.act(state, memory).cpu().data.numpy().flatten()
     
     def update (self, memory):
-        # MC estimate of rewards
-        rewards = []
+        # MC estimate of Return
+        Returns = []
         disc_reward = 0
         for reward , is_terminal in zip(reversed(memory.rewards),reversed(memory.is_terminals)) :
             if is_terminal:
                 disc_reward = 0
             disc_reward = reward + self.gamma* disc_reward
             # newest in the first
-            rewards.insert(0,disc_reward)       
+            Returns.insert(0,disc_reward)       
 
-        # Normalizing the rewards:here rewards mean return in MC
-        rewards = torch.tensor(rewards).to(device).float()
-        rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-5)
+        # Normalizing the Returns:here Returns mean return in MC
+        Returns = torch.tensor(Returns).to(device).float()
+        Returns = (Returns - Returns.mean()) / (Returns.std() + 1e-5)
         # convert list to tensor, old ones need not to be in the grad graph
         old_states = torch.squeeze(torch.stack(memory.states).to(device), 1).detach()
         old_actions = torch.squeeze(torch.stack(memory.actions).to(device), 1).detach()
@@ -121,14 +123,14 @@ class PPO() :
             # evalute the old 
             log_probs, state_values, dist_entropy = self.policy.evaluate(old_states,old_actions)
         # finding the ratio (pi_theta / pi_theta__old):
-            ratios = torch.exp(logprobs - old_logprobs.detach()).float()
+            ratios = torch.exp(log_probs - old_logprobs.detach()).float()
 
         # find the surrogate loss
         
-        advantages = rewards- state_values.detach()
+        advantages = Returns- state_values.detach()
         L_CPI = ratios* advantages
         L_CLIP = torch.min(L_CPI,torch.clamp(ratios,1-self.eps_clip,1+self.eps_clip)*advantages)
-        loss = -L_CLIP + 0.5 * self.MseLoss(state_values, rewards)- 0.01 *dist_entropy
+        loss = -L_CLIP + 0.5 * self.MseLoss(state_values, Returns)- 0.01 *dist_entropy
         
         # Take gradient step
         self.optimizer.zero_grad()
@@ -169,7 +171,7 @@ def main():
     
     # logging variables
     running_reward = 0
-    avg_length = 0
+    average_length = 0
     time_step = 0
     
     # training loop
@@ -196,7 +198,7 @@ def main():
             if done:
                 break
         
-        avg_length += t
+        average_length += t
         
         # save every 500 episodes
         if i_episode % 500 == 0:
@@ -204,12 +206,12 @@ def main():
             
         # logging
         if i_episode % log_interval == 0:
-            avg_length = int(avg_length/log_interval)
+            average_length = int(average_length/log_interval)
             running_reward = int((running_reward/log_interval))
             
-            print('Episode {} \t Avg length: {} \t Avg reward: {}'.format(i_episode, avg_length, running_reward))
+            print('Episode {} \t average length: {} \t average reward: {}'.format(i_episode, average_length, running_reward))
             running_reward = 0
-            avg_length = 0
+            average_length = 0
             
 if __name__ == '__main__':
     main()
